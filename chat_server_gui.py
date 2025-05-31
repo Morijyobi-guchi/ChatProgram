@@ -3,6 +3,15 @@ from tkinter import scrolledtext, simpledialog, PhotoImage, messagebox
 import socket
 import threading
 import datetime
+import os # 環境変数のために追加
+
+# Gemini APIのインポートをtry-except文で保護
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    genai = None
 
 class ChatServerGUI:
     def __init__(self, master):
@@ -43,6 +52,43 @@ class ChatServerGUI:
         self.is_running = False
         self.listen_thread = None
         self.port = 50000 # デフォルトポート
+        self.chat_history = [] # チャット履歴保存用リスト
+        self.MAX_HISTORY_LINES = 50 # 保存するチャット履歴の最大行数
+        self.SUMMARY_LINES_FOR_GEMINI = 30 # Geminiに渡す履歴の行数
+
+        # Gemini API設定
+        self.gemini_api_key = os.getenv("API_Gemini")
+        self.gemini_model = None
+        
+        if not GEMINI_AVAILABLE:
+            self.log_message("google.generativeaiライブラリがインストールされていません。Gemini要約機能は無効です。", "WARN")
+            self.gemini_api_key = None
+        elif not self.gemini_api_key:
+            self.log_message("環境変数 API_Gemini が設定されていません。Gemini要約機能は無効です。", "WARN")
+        else:
+            try:
+                genai.configure(api_key=self.gemini_api_key)
+                # 利用可能なモデル名に変更
+                try:
+                    self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                    self.log_message("Gemini API (gemini-1.5-flash) の準備ができました。", "INFO")
+                except Exception:
+                    try:
+                        self.gemini_model = genai.GenerativeModel('gemini-1.5-pro')
+                        self.log_message("Gemini API (gemini-1.5-pro) の準備ができました。", "INFO")
+                    except Exception:
+                        # フォールバック: 利用可能なモデルをリストアップ
+                        models = genai.list_models()
+                        available_models = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
+                        if available_models:
+                            model_name = available_models[0].split('/')[-1]  # models/xxx から xxx を取得
+                            self.gemini_model = genai.GenerativeModel(model_name)
+                            self.log_message(f"Gemini API ({model_name}) の準備ができました。", "INFO")
+                        else:
+                            raise Exception("利用可能なモデルが見つかりません")
+            except Exception as e:
+                self.log_message(f"Gemini APIの初期化に失敗しました: {e}", "ERROR")
+                self.gemini_api_key = None # エラー時は無効化
 
         master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -206,6 +252,8 @@ class ChatServerGUI:
                     self.handle_private_message(client_info, recipient_username, pm_content)
                 elif message_str.strip().lower() == "/users":
                     self.send_user_list(client_socket)
+                elif message_str.strip().lower() == "/summarize_gemini": # Gemini要約コマンド
+                    self.trigger_gemini_summary(client_socket, username)
                 else:
                     full_message = f"{username}: {message_str}"
                     self.log_message(f"受信 ({username}): {message_str}")
@@ -237,9 +285,50 @@ class ChatServerGUI:
         try:
             client_socket.sendall(message_string.encode('utf-8'))
         except Exception as e:
-            # 送信失敗時の処理 (通常は client_handler のメインループで検知される)
-            # ここで client_sockets から削除すると client_handler と競合する可能性があるので注意
             self.log_message(f"特定クライアントへの送信エラー: {e}", "ERROR")
+
+    def trigger_gemini_summary(self, client_socket, username):
+        if not GEMINI_AVAILABLE:
+            self.send_to_client(client_socket, "SYSTEM_GEMINI_SUMMARY: google.generativeaiライブラリがインストールされていないため、要約を生成できません。")
+            self.log_message(f"ユーザー {username} のGemini要約リクエスト失敗: ライブラリ未インストール", "WARN")
+            return
+            
+        if not self.gemini_api_key or not self.gemini_model:
+            self.send_to_client(client_socket, "SYSTEM_GEMINI_SUMMARY: Gemini APIが利用できないため、要約を生成できません。")
+            self.log_message(f"ユーザー {username} のGemini要約リクエスト失敗: API未設定", "WARN")
+            return
+
+        if not self.chat_history:
+            self.send_to_client(client_socket, "SYSTEM_GEMINI_SUMMARY: 要約対象のチャット履歴がありません。")
+            self.log_message(f"ユーザー {username} のGemini要約リクエスト失敗: 履歴なし", "INFO")
+            return
+
+        self.send_to_client(client_socket, "SYSTEM_INFO: Gemini APIによる要約を生成中です。少々お待ちください...")
+        self.log_message(f"ユーザー {username} からGemini要約リクエストを受信。処理を開始します。", "INFO")
+
+        # API呼び出しを別スレッドで実行
+        threading.Thread(target=self.execute_gemini_summary, args=(client_socket, username), daemon=True).start()
+
+    def execute_gemini_summary(self, client_socket, username):
+        try:
+            # Geminiに渡す履歴を選択（最新のN件）
+            history_to_summarize = self.chat_history[-self.SUMMARY_LINES_FOR_GEMINI:]
+            history_text = "\n".join(history_to_summarize)
+            
+            prompt = f"以下のチャットの会話履歴です。この会話の主要なトピックや流れを簡潔に日本語で要約してください。\n\n会話履歴:\n{history_text}\n\n要約:"
+            
+            response = self.gemini_model.generate_content(prompt)
+            summary = response.text.strip()
+            
+            self.send_to_client(client_socket, f"SYSTEM_GEMINI_SUMMARY: (Geminiによる要約)\n{summary}")
+            # GUIのログ更新はメインスレッドで行う
+            self.master.after(0, self.log_message, f"ユーザー {username} へのGemini要約送信完了。", "INFO")
+
+        except Exception as e:
+            error_message = f"Gemini APIでの要約生成中にエラーが発生しました: {type(e).__name__}"
+            self.send_to_client(client_socket, f"SYSTEM_GEMINI_SUMMARY: {error_message}")
+            # GUIのログ更新はメインスレッドで行う
+            self.master.after(0, self.log_message, f"Gemini APIエラー ({username}): {e}", "ERROR")
 
 
     def handle_private_message(self, sender_info, recipient_username, message_content):
@@ -274,6 +363,12 @@ class ChatServerGUI:
 
 
     def broadcast_message(self, message_string, sender_socket):
+        # システムメッセージでなく、かつユーザーの発言の場合のみ履歴に追加
+        if sender_socket is not None and not message_string.startswith("SYSTEM:"):
+            self.chat_history.append(message_string)
+            if len(self.chat_history) > self.MAX_HISTORY_LINES:
+                self.chat_history.pop(0) # 古いものから削除
+        
         clients_to_remove = []
         for client_info_b in self.client_sockets:
             client_sock_b, _, username_b = client_info_b
