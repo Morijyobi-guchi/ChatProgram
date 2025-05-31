@@ -65,7 +65,12 @@ class ChatClientGUI:
 
         self.send_button = tk.Button(self.message_frame, text="送信", command=self.send_message, state='disabled',
                                      bg='#2196F3', fg='white', font=("Arial", 10, "bold"), relief=tk.RAISED, borderwidth=2, activebackground='#1e88e5') # Blue
-        self.send_button.pack(side=tk.LEFT)
+        self.send_button.pack(side=tk.LEFT, padx=(0,5))
+
+        self.gemini_summarize_button = tk.Button(self.message_frame, text="Gemini要約", command=self.request_gemini_summary, state='disabled',
+                                                 bg='#FFC107', fg='black', font=("Arial", 10, "bold"), relief=tk.RAISED, borderwidth=2, activebackground='#ffb300') # Amber
+        self.gemini_summarize_button.pack(side=tk.LEFT)
+
 
         self.client_socket = None
         self.is_connected = False
@@ -82,6 +87,8 @@ class ChatClientGUI:
         self.chat_display.tag_config('other_message', foreground='#333333') # Default Black/Grey
         self.chat_display.tag_config('pm_sent', foreground='#6A1B9A', font=("Arial", 10, 'italic')) # Purple (to X)
         self.chat_display.tag_config('pm_received', foreground='#AD1457', font=("Arial", 10, 'bold')) # Pink (from X)
+        # self.chat_display.tag_config('summary', foreground='#4A148C', font=("Arial", 10, 'italic'), background='#E1BEE7') # 通常の要約用 (もしあれば)
+        self.chat_display.tag_config('gemini_summary', foreground='#BF360C', font=("Arial", 10, 'italic'), background='#FFCCBC') # Deep Orange BG for Gemini summary
 
 
         master.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -132,6 +139,8 @@ class ChatClientGUI:
             self.username_entry.config(state='disabled')
             self.message_input.config(state='normal')
             self.send_button.config(state='normal')
+            # self.summarize_button.config(state='normal') # 通常の要約ボタン (もしあれば)
+            self.gemini_summarize_button.config(state='normal') # Gemini要約ボタンを有効化
             self.message_input.focus_set()
 
             self.receive_thread = threading.Thread(target=self.receive_messages, daemon=True)
@@ -188,6 +197,8 @@ class ChatClientGUI:
         self.username_entry.config(state='normal')
         self.message_input.config(state='disabled')
         self.send_button.config(state='disabled')
+        # self.summarize_button.config(state='disabled') # 通常の要約ボタン (もしあれば)
+        self.gemini_summarize_button.config(state='disabled') # Gemini要約ボタンを無効化
         self.message_input.delete(0, tk.END)
 
 
@@ -214,6 +225,35 @@ class ChatClientGUI:
                  self.handle_disconnection("送信エラー: サーバーとの接続がリセットされました。(ConnectionReset)")
             except Exception as e:
                 self.handle_disconnection(f"送信エラー: {e}")
+
+    # def request_summary(self): # 通常の要約リクエスト (もしあれば)
+    #     if not self.is_connected or not self.client_socket:
+    #         messagebox.showerror("要約エラー", "サーバーに接続されていません。", parent=self.master)
+    #         return
+    #     try:
+    #         self.client_socket.sendall("/summarize".encode('utf-8'))
+    #         self.display_message("システム: チャットの要約をリクエストしました...", tag='info')
+    #     except BrokenPipeError:
+    #         self.handle_disconnection("要約リクエストエラー: サーバーとの接続が切れました。(BrokenPipe)")
+    #     except ConnectionResetError:
+    #         self.handle_disconnection("要約リクエストエラー: サーバーとの接続がリセットされました。(ConnectionReset)")
+    #     except Exception as e:
+    #         self.handle_disconnection(f"要約リクエストエラー: {e}")
+
+    def request_gemini_summary(self):
+        if not self.is_connected or not self.client_socket:
+            messagebox.showerror("Gemini要約エラー", "サーバーに接続されていません。", parent=self.master)
+            return
+        try:
+            self.client_socket.sendall("/summarize_gemini".encode('utf-8'))
+            self.display_message("システム: Gemini要約をリクエストしました...", tag='info')
+        except BrokenPipeError:
+            self.handle_disconnection("Gemini要約リクエストエラー: サーバーとの接続が切れました。(BrokenPipe)")
+        except ConnectionResetError:
+            self.handle_disconnection("Gemini要約リクエストエラー: サーバーとの接続がリセットされました。(ConnectionReset)")
+        except Exception as e:
+            self.handle_disconnection(f"Gemini要約リクエストエラー: {e}")
+
 
     def receive_messages(self):
         while self.is_connected and self.client_socket:
@@ -253,12 +293,26 @@ class ChatClientGUI:
                 elif message == "SERVER_SHUTDOWN":
                     self.handle_disconnection("サーバーがシャットダウンしました。")
                     break
+                elif message.startswith("SYSTEM_INFO:"): # サーバーからのお知らせ (例: 要約生成中)
+                    self.display_message(message, tag='info')
                 elif message.startswith("SYSTEM:"):
                     self.display_message(message, tag='system')
                 elif message.startswith("(個人 from"): # (個人 from Sender): Message
                     self.display_message(message, tag='pm_received')
                 elif message.startswith("(個人 to"):   # (個人 to Recipient): Message
                     self.display_message(message, tag='pm_sent')
+                # elif message.startswith("SYSTEM_SUMMARY:"): # 通常の要約メッセージ (もしあれば)
+                #     self.display_message(message, tag='summary')
+                elif message.startswith("SYSTEM_GEMINI_SUMMARY:"): # Gemini要約メッセージ
+                    # ライブラリ未インストールエラーの特別処理
+                    if "ライブラリがインストールされていない" in message:
+                        self.display_message("システム: Google Generative AIライブラリがサーバーにインストールされていません。", tag='system_error')
+                        self.display_message("システム: 管理者にライブラリのインストールを依頼してください。", tag='system_error')
+                        self.display_message("システム: インストールコマンド: pip install google-generativeai", tag='info')
+                    elif "APIが利用できない" in message:
+                        self.display_message("システム: Gemini APIが設定されていないか、初期化に失敗しました。", tag='system_error')
+                    else:
+                        self.display_message(message, tag='gemini_summary')
                 else:
                     self.display_message(message, tag='other_message')
 
