@@ -1,14 +1,9 @@
-# チャットプログラム
+# オリジナルチャットプログラム
 GUI環境によるTCPを利用したオリジナルChatプログラムを作成
 
 ## 必要なライブラリのインストール
 
 ### 基本ライブラリ
-```bash
-pip install google-generativeai
-```
-
-または、requirements.txtを使用：
 ```bash
 pip install -r requirements.txt
 ```
@@ -26,21 +21,28 @@ pip install -r requirements.txt
    export API_Gemini=your_api_key_here
    ```
 
-## 実行方法
+### アプリケーションの起動
 
-### サーバー起動
+#### サーバーの起動
 ```bash
 python chat_server_gui.py
 ```
+1. 「サーバー起動」ボタンをクリック
+2. ポート番号を入力（デフォルト: 50000）
+3. サーバーが起動したことを確認
 
-### クライアント起動
+#### クライアントの起動
 ```bash
 python chat_client_gui.py
 ```
+1. サーバーIP、ポート、ユーザー名を入力
+2. 「接続」ボタンをクリック
+3. チャットを開始
+
 
 ## 機能
 
 - 複数クライアント同時接続
 - 個人メッセージ機能 (/w ユーザー名 メッセージ)
 - ユーザーリスト表示 (/users)
-- Gemini AI による会話要約 (/summarize_gemini)
+- ポジティブなメッセージをGemini APIで生成

@@ -1,94 +1,75 @@
-import tkinter as tk
-from tkinter import scrolledtext, simpledialog, PhotoImage, messagebox
+import customtkinter as ctk
+from tkinter import messagebox, PhotoImage
+from tkinter.simpledialog import askstring
 import socket
 import threading
 import datetime
-import os # 環境変数のために追加
-
-# Gemini APIのインポートをtry-except文で保護
-try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
-    genai = None
+import os
+import google.generativeai as genai
 
 class ChatServerGUI:
     def __init__(self, master):
         self.master = master
         master.title("チャットサーバー")
-        master.geometry("550x350") # 少しサイズ調整
-        master.configure(bg='#ADD8E6') # Light Blue背景
+        master.geometry("550x400")
+
+        ctk.set_appearance_mode("System")
+        ctk.set_default_color_theme("blue")
 
         # アイコン設定 (オプション: .pngファイルを同じディレクトリに配置)
         try:
-            icon = PhotoImage(file='server_icon.png') # ここにアイコンファイル名
+            icon = PhotoImage(file='server_icon.png')
             master.iconphoto(True, icon)
-        except tk.TclError:
+        except Exception:
             print("サーバーアイコンが見つかりません。スキップします。")
 
-        self.log_label = tk.Label(master, text="サーバーログ:", bg='#ADD8E6', font=("Arial", 12))
+        self.log_label = ctk.CTkLabel(master, text="サーバーログ:")
         self.log_label.pack(pady=(10,0))
 
-        self.log_area = scrolledtext.ScrolledText(master, state='disabled', wrap=tk.WORD, height=15, width=65,
-                                                  bg='#F0F0F0', fg='#333333', font=("Arial", 10)) # Light Grey BG, Dark Grey FG
-        self.log_area.pack(pady=5, padx=10)
+        self.log_area = ctk.CTkTextbox(master, state='disabled', wrap="word", height=250)
+        self.log_area.pack(pady=5, padx=10, fill="both", expand=True)
 
-        self.button_frame = tk.Frame(master, bg='#ADD8E6')
+        self.button_frame = ctk.CTkFrame(master, fg_color="transparent")
         self.button_frame.pack(pady=10)
 
-        self.start_button = tk.Button(self.button_frame, text="サーバー起動", command=self.start_server_prompt,
-                           bg='#4CAF50', fg='white', font=("Arial", 10, "bold"), relief=tk.RAISED, borderwidth=3,
-                           activebackground='#45a049') # Green BG
-        self.start_button.pack(side=tk.LEFT, padx=20) # padxの値を増やして間隔を調整
+        self.start_button = ctk.CTkButton(self.button_frame, text="サーバー起動", command=self.start_server_prompt)
+        self.start_button.pack(side="left", padx=20)
 
-        self.stop_button = tk.Button(self.button_frame, text="サーバー停止", command=self.stop_server, state='disabled',
-                          bg='#F44336', fg='white', font=("Arial", 10, "bold"), relief=tk.RAISED, borderwidth=3,
-                          activebackground='#e53935') # Red BG
-        self.stop_button.pack(side=tk.LEFT, padx=20) # padxの値を増やして間隔を調整
+        self.stop_button = ctk.CTkButton(self.button_frame, text="サーバー停止", command=self.stop_server, state='disabled')
+        self.stop_button.pack(side="left", padx=20)
 
         self.server_socket = None
-        self.client_sockets = [] # (socket, address, username) のタプルを格納
+        self.client_sockets = []
         self.is_running = False
         self.listen_thread = None
-        self.port = 50000 # デフォルトポート
-        self.chat_history = [] # チャット履歴保存用リスト
-        self.MAX_HISTORY_LINES = 50 # 保存するチャット履歴の最大行数
-        self.SUMMARY_LINES_FOR_GEMINI = 30 # Geminiに渡す履歴の行数
+        self.chat_history = []
+        self.MAX_HISTORY_LINES = 50
+        self.SUMMARY_LINES_FOR_GEMINI = 30
+        self.MAX_HISTORY_LINES = 50
+        self.port = 50000  # デフォルトポート追加
 
         # Gemini API設定
         self.gemini_api_key = os.getenv("API_Gemini")
         self.gemini_model = None
-        
-        if not GEMINI_AVAILABLE:
-            self.log_message("google.generativeaiライブラリがインストールされていません。Gemini要約機能は無効です。", "WARN")
-            self.gemini_api_key = None
-        elif not self.gemini_api_key:
-            self.log_message("環境変数 API_Gemini が設定されていません。Gemini要約機能は無効です。", "WARN")
+        self.gemini_enabled = False
+
+        if not self.gemini_api_key:
+            self.log_message("環境変数 API_Gemini が設定されていません。Gemini機能は無効です。", "WARN")
         else:
             try:
                 genai.configure(api_key=self.gemini_api_key)
-                # 利用可能なモデル名に変更
+                # Gemini 2.0 Flashを最優先に、その後無料モデルをフォールバック
                 try:
-                    self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
-                    self.log_message("Gemini API (gemini-1.5-flash) の準備ができました。", "INFO")
-                except Exception:
-                    try:
-                        self.gemini_model = genai.GenerativeModel('gemini-1.5-pro')
-                        self.log_message("Gemini API (gemini-1.5-pro) の準備ができました。", "INFO")
-                    except Exception:
-                        # フォールバック: 利用可能なモデルをリストアップ
-                        models = genai.list_models()
-                        available_models = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
-                        if available_models:
-                            model_name = available_models[0].split('/')[-1]  # models/xxx から xxx を取得
-                            self.gemini_model = genai.GenerativeModel(model_name)
-                            self.log_message(f"Gemini API ({model_name}) の準備ができました。", "INFO")
-                        else:
-                            raise Exception("利用可能なモデルが見つかりません")
+                    self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                    model_name = 'models/gemini-1.5-flash-latest'
+                except:
+                    raise Exception("利用可能なGeminiモデルが見つかりません")
+                
+                self.gemini_enabled = True
+                self.log_message(f"Gemini APIの準備ができました (model: {model_name})。", "INFO")
             except Exception as e:
                 self.log_message(f"Gemini APIの初期化に失敗しました: {e}", "ERROR")
-                self.gemini_api_key = None # エラー時は無効化
+                self.gemini_enabled = False
 
         master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -96,14 +77,14 @@ class ChatServerGUI:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         formatted_message = f"[{now}] [{level}] {message}\n"
         
-        self.log_area.config(state='normal')
-        self.log_area.insert(tk.END, formatted_message)
-        self.log_area.see(tk.END)
-        self.log_area.config(state='disabled')
+        self.log_area.configure(state='normal')
+        self.log_area.insert("end", formatted_message)
+        self.log_area.see("end")
+        self.log_area.configure(state='disabled')
         print(formatted_message.strip())
 
     def start_server_prompt(self):
-        port_str = simpledialog.askstring("ポート番号", "サーバーを起動するポート番号を入力してください:", initialvalue=str(self.port), parent=self.master)
+        port_str = askstring("ポート番号", "サーバーを起動するポート番号を入力してください:", initialvalue=str(self.port), parent=self.master)
         if port_str:
             try:
                 self.port = int(port_str)
@@ -128,8 +109,8 @@ class ChatServerGUI:
             self.server_socket.listen()
             self.is_running = True
             self.log_message(f"サーバーがポート {self.port} で起動しました。")
-            self.start_button.config(state='disabled')
-            self.stop_button.config(state='normal')
+            self.start_button.configure(state='disabled')
+            self.stop_button.configure(state='normal')
 
             self.listen_thread = threading.Thread(target=self.accept_connections, daemon=True)
             self.listen_thread.start()
@@ -139,7 +120,7 @@ class ChatServerGUI:
             if self.server_socket:
                 self.server_socket.close()
             self.is_running = False
-            self.start_button.config(state='normal') # 失敗したらボタンを戻す
+            self.start_button.configure(state='normal')
 
     def stop_server(self, show_log = True):
         if not self.is_running:
@@ -160,14 +141,11 @@ class ChatServerGUI:
 
         if self.server_socket:
             try:
-                # accept()のブロッキングを解除するためにダミー接続
-                # サーバーソケット自体を閉じる前に、自己接続で accept() から抜ける
-                # サーバーソケットが None になる前に実行
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as dummy_socket:
-                    dummy_socket.settimeout(0.1) # タイムアウトを短く設定
+                    dummy_socket.settimeout(0.1)
                     dummy_socket.connect(("127.0.0.1", self.port))
             except:
-                pass # 接続できなくても、acceptがブロックしていなければ問題ない
+                pass
             finally:
                 self.server_socket.close()
                 self.server_socket = None
@@ -176,8 +154,8 @@ class ChatServerGUI:
              self.listen_thread.join(timeout=0.5)
 
         if show_log: self.log_message("サーバーが停止しました。")
-        self.start_button.config(state='normal')
-        self.stop_button.config(state='disabled')
+        self.start_button.configure(state='normal')
+        self.stop_button.configure(state='disabled')
 
     def accept_connections(self):
         while self.is_running:
@@ -252,7 +230,21 @@ class ChatServerGUI:
                     self.handle_private_message(client_info, recipient_username, pm_content)
                 elif message_str.strip().lower() == "/users":
                     self.send_user_list(client_socket)
-                elif message_str.strip().lower() == "/summarize_gemini": # Gemini要約コマンド
+                elif message_str.startswith("/ask_gemini "): 
+                    if not self.gemini_enabled or not self.gemini_model:
+                        self.send_to_client(client_socket, "SYSTEM: Geminiが現在利用できません。")
+                        self.log_message(f"User {username} tried to ask Gemini, but it's not enabled/initialized.", "WARN")
+                        continue
+                    question = message_str.split(" ", 1)[1]
+                    self.trigger_ask_gemini(client_socket, username, question)
+                elif message_str.startswith("/positive_transform "): # 新しいコマンドの処理
+                    if not self.gemini_enabled or not self.gemini_model:
+                        self.send_to_client(client_socket, "SYSTEM: AI変換機能が現在利用できません。")
+                        self.log_message(f"User {username} tried to use AI positive transform, but Gemini is not enabled/initialized.", "WARN")
+                        continue
+                    original_message = message_str.split(" ", 1)[1]
+                    self.trigger_positive_transform(client_socket, username, original_message)
+                elif message_str.strip().lower() == "/summarize_gemini":
                     self.trigger_gemini_summary(client_socket, username)
                 else:
                     full_message = f"{username}: {message_str}"
@@ -288,11 +280,6 @@ class ChatServerGUI:
             self.log_message(f"特定クライアントへの送信エラー: {e}", "ERROR")
 
     def trigger_gemini_summary(self, client_socket, username):
-        if not GEMINI_AVAILABLE:
-            self.send_to_client(client_socket, "SYSTEM_GEMINI_SUMMARY: google.generativeaiライブラリがインストールされていないため、要約を生成できません。")
-            self.log_message(f"ユーザー {username} のGemini要約リクエスト失敗: ライブラリ未インストール", "WARN")
-            return
-            
         if not self.gemini_api_key or not self.gemini_model:
             self.send_to_client(client_socket, "SYSTEM_GEMINI_SUMMARY: Gemini APIが利用できないため、要約を生成できません。")
             self.log_message(f"ユーザー {username} のGemini要約リクエスト失敗: API未設定", "WARN")
@@ -308,27 +295,6 @@ class ChatServerGUI:
 
         # API呼び出しを別スレッドで実行
         threading.Thread(target=self.execute_gemini_summary, args=(client_socket, username), daemon=True).start()
-
-    def execute_gemini_summary(self, client_socket, username):
-        try:
-            # Geminiに渡す履歴を選択（最新のN件）
-            history_to_summarize = self.chat_history[-self.SUMMARY_LINES_FOR_GEMINI:]
-            history_text = "\n".join(history_to_summarize)
-            
-            prompt = f"以下のチャットの会話履歴です。この会話の主要なトピックや流れを簡潔に日本語で要約してください。\n\n会話履歴:\n{history_text}\n\n要約:"
-            
-            response = self.gemini_model.generate_content(prompt)
-            summary = response.text.strip()
-            
-            self.send_to_client(client_socket, f"SYSTEM_GEMINI_SUMMARY: (Geminiによる要約)\n{summary}")
-            # GUIのログ更新はメインスレッドで行う
-            self.master.after(0, self.log_message, f"ユーザー {username} へのGemini要約送信完了。", "INFO")
-
-        except Exception as e:
-            error_message = f"Gemini APIでの要約生成中にエラーが発生しました: {type(e).__name__}"
-            self.send_to_client(client_socket, f"SYSTEM_GEMINI_SUMMARY: {error_message}")
-            # GUIのログ更新はメインスレッドで行う
-            self.master.after(0, self.log_message, f"Gemini APIエラー ({username}): {e}", "ERROR")
 
 
     def handle_private_message(self, sender_info, recipient_username, message_content):
@@ -363,33 +329,91 @@ class ChatServerGUI:
 
 
     def broadcast_message(self, message_string, sender_socket):
-        # システムメッセージでなく、かつユーザーの発言の場合のみ履歴に追加
-        if sender_socket is not None and not message_string.startswith("SYSTEM:"):
+        # Geminiの応答も履歴に含める
+        if message_string.startswith("GEMINI_RESPONSE:"):
+            actual_gemini_message = message_string.split(":", 1)[1] if ":" in message_string else message_string
+            self.chat_history.append(actual_gemini_message.strip())
+            self.log_message(f"履歴追加 (Gemini): {actual_gemini_message.strip()}", "DEBUG")
+        elif message_string.startswith("AI_POSITIVE_RESPONSE:"): # AIポジティブ応答の履歴追加
+            actual_positive_message = message_string.split(":", 1)[1].strip() if ":" in message_string else message_string.strip()
+            self.chat_history.append(actual_positive_message)
+            self.log_message(f"履歴追加 (AI Positive): {actual_positive_message}", "DEBUG")
+        elif sender_socket is not None and not message_string.startswith("SYSTEM:"):
             self.chat_history.append(message_string)
             if len(self.chat_history) > self.MAX_HISTORY_LINES:
-                self.chat_history.pop(0) # 古いものから削除
+                self.chat_history.pop(0)
         
-        clients_to_remove = []
         for client_info_b in self.client_sockets:
             client_sock_b, _, username_b = client_info_b
-            # sender_socket が None (システムメッセージ) または送信者自身でない場合に送信
             if sender_socket is None or client_sock_b != sender_socket:
                 try:
                     client_sock_b.sendall(message_string.encode('utf-8'))
                 except Exception as e:
                     self.log_message(f"ブロードキャストエラー ({username_b}): {e}", "ERROR")
-                    # 送信に失敗したクライアントはリストから削除候補とする
-                    # ただし、ここで直接削除すると client_handler と競合する可能性があるため、
-                    # client_handler のエラー処理に任せるのが基本。
-                    # ここではログのみに留めるか、より高度なエラーハンドリングが必要。
-                    # clients_to_remove.append(client_info_b) # 今回は削除処理はclient_handlerに任せる
-        
-        # for dead_client in clients_to_remove:
-        #     if dead_client in self.client_sockets:
-        #         self.client_sockets.remove(dead_client)
-        #         username_dead = dead_client[2]
-        #         self.log_message(f"{username_dead} をリストから削除 (ブロードキャスト送信失敗)")
-        #         # 再帰的なブロードキャストを避けるため、ここでは退室メッセージは送らない
+
+    def trigger_ask_gemini(self, client_socket, username, question):
+        if not self.gemini_enabled or not self.gemini_model:
+            self.send_to_client(client_socket, "SYSTEM: Gemini APIが現在利用できません。")
+            self.log_message(f"ユーザー {username} のGemini質問リクエスト失敗: Gemini無効またはモデル未初期化", "WARN")
+            return
+
+        self.log_message(f"ユーザー {username} からGeminiへの質問「{question}」を受信。処理を開始します。", "INFO")
+
+        # API呼び出しを別スレッドで実行
+        threading.Thread(target=self.execute_ask_gemini_sync, args=(username, question), daemon=True).start()
+
+    def trigger_positive_transform(self, client_socket, username, original_message):
+        if not self.gemini_enabled or not self.gemini_model: # Gemini APIを流用
+            self.send_to_client(client_socket, "SYSTEM: AI変換機能が現在利用できません。")
+            self.log_message(f"ユーザー {username} のAIポジティブ変換リクエスト失敗: Gemini無効またはモデル未初期化", "WARN")
+            return
+
+        self.log_message(f"ユーザー {username} からAIポジティブ変換リクエスト「{original_message}」を受信。処理を開始します。", "INFO")
+        # API呼び出しを別スレッドで実行
+        threading.Thread(target=self.execute_positive_transform, args=(username, original_message), daemon=True).start()
+
+    def execute_positive_transform(self, username, original_message):
+        try:
+            # チャット履歴を取得して文脈情報として使用
+            history_snapshot = list(self.chat_history)
+            context_history = "\n".join(history_snapshot[-10:]) if history_snapshot else "（履歴なし）"
+            
+            prompt = f"""あなたは、送信者{username}の発言を変換し、どんな悪口やネガティブな表現でも非常にポジティブな言い回しに変換するAIです。自然で簡潔な応答をしてください。
+。絵文字は使用しないでください。
+
+過去のチャット履歴（文脈参考用）:
+{context_history}
+
+変換対象のメッセージ送信者: {username}←ここを変更する
+変換前のメッセージ:
+「{original_message}」←ここを変更する【重要】
+
+上記の履歴と文脈を踏まえて、変換後のメッセージだけを、チャットでそのまま送信できる形で出力してください。「」で囲む必要はありません。
+ポジティブな表現にする上で表現方法は変わる可能性がありますが、元々のメッセージの内容は変えず表現方法を
+変えるだけにしてください。例えば、悪口やネガティブな表現をポジティブな表現に変換することが求められます。
+会話の流れに合わせて、より適切で自然なポジティブ表現にしてください。
+
+例：
+変換前：「うるさい」
+変換後：「盛り上げてくれてありがとう」
+"""
+            
+            self.log_message(f"GeminiにAIポジティブ変換を送信中 ({username}): {original_message[:30]}...", "DEBUG")
+            response = self.gemini_model.generate_content(prompt)
+            transformed_message_text = response.text.strip()
+            
+            response_for_broadcast = f"AI_POSITIVE_RESPONSE:{username} : {transformed_message_text}"
+            self.master.after(0, self.broadcast_ai_response_message, response_for_broadcast)
+            self.master.after(0, self.log_message, f"AIポジティブ変換の応答をブロードキャスト準備 ({username}のメッセージ「{original_message[:30]}...」に対して)", "INFO")
+
+        except Exception as e:
+            error_message = f"AIポジティブ変換 APIエラー (依頼者 {username}): {e}"
+            self.master.after(0, self.log_message, error_message, "ERROR")
+            # エラー発生を依頼者に通知する場合は、client_socketを渡すか、usernameから検索する処理が必要
+
+    def broadcast_ai_response_message(self, message_text_with_prefix):
+        """AIからのメッセージ(Gemini応答、ポジティブ変換応答など)をブロードキャストし、ログに記録する"""
+        self.broadcast_message(message_text_with_prefix, None)
 
     def on_closing(self):
         if self.is_running:
@@ -402,6 +426,6 @@ class ChatServerGUI:
             self.master.destroy()
 
 if __name__ == '__main__':
-    root = tk.Tk()
+    root = ctk.CTk()
     app = ChatServerGUI(root)
     root.mainloop()

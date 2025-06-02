@@ -1,5 +1,5 @@
-import tkinter as tk
-from tkinter import scrolledtext, simpledialog, messagebox, PhotoImage
+import customtkinter as ctk
+from tkinter import messagebox, PhotoImage  # messagebox と PhotoImage は tkinter から継続利用
 import socket
 import threading
 import datetime
@@ -9,98 +9,228 @@ class ChatClientGUI:
     def __init__(self, master):
         self.master = master
         master.title("チャットクライアント")
-        master.geometry("730x500") # サイズを少し調整
-        master.configure(bg='#E0F7FA') # Light Cyan背景
+        master.geometry("680x500")
+
+        ctk.set_appearance_mode("Light")  # Modes: "System" (default), "Dark", "Light"
+        ctk.set_default_color_theme("blue")  # Themes: "blue" (default), "green", "dark-blue"
 
         # アイコン設定 (オプション)
         try:
-            icon = PhotoImage(file='client_icon.png')
+            # ICOファイルを優先的に使用（Windowsでより確実）
+            try:
+                # .icoファイルがある場合はwm_iconbitmapを使用
+                master.wm_iconbitmap('client_icon.ico')
+                print("アイコンを正常に設定しました: client_icon.ico")
+            except:
+                # PNGファイルからアイコン画像を読み込み
+                icon = PhotoImage(file='client_icon.png')
+                
+                # アイコンのサイズを調整（32x32または16x16が推奨）
+                # subsampleで縮小する場合
+                # icon = icon.subsample(2, 2)  # 半分のサイズに縮小
+                
+                # ウィンドウのアイコンを設定
+                master.iconphoto(True, icon)
+                
+                # 追加の設定（Windows用）
+                master.wm_iconphoto(True, icon)
+                
+                print("アイコンを正常に設定しました: client_icon.png")
+                
+        except FileNotFoundError:
+            print("アイコンファイルが見つかりません: client_icon.png または client_icon.ico")
+            print("デフォルトのTkinterアイコンを使用します")
+        except Exception as e:
+            print(f"アイコン設定中にエラーが発生: {e}")
+            print("サポートされる形式: ICO (推奨), PNG, GIF")
+            # photo(default, *photoimages)の説明:
+            # - default=True: このアイコンをアプリケーションのデフォルトアイコンとして設定
+            #   True: 全ての新しいトップレベルウィンドウに適用
+            #   False: このウィンドウのみに適用
+            # - icon: PhotoImageオブジェクト（PNG、GIF形式をサポート）
+            # 
+            # 効果:
+            # 1. ウィンドウのタイトルバー左端にアイコンが表示される
+            # 2. タスクバーにアイコンが表示される
+            # 3. Alt+Tabでのウィンドウ切り替え時にアイコンが表示される
+            # 4. システムの通知エリアでアイコンが使用される
             master.iconphoto(True, icon)
-        except tk.TclError:
-            print("クライアントアイコンが見つかりません。スキップします。")
+            
+            print("アイコンを正常に設定しました: client_icon.png")
+        except FileNotFoundError:
+            print("アイコンファイルが見つかりません: client_icon.png")
+            print("デフォルトのTkinterアイコンを使用します")
+        except Exception as e:
+            print(f"アイコン設定中にエラーが発生: {e}")
+            print("サポートされる形式: PNG, GIF")
 
         # 接続情報フレーム
-        self.connection_frame = tk.Frame(master, bg='#B2EBF2', pady=5) # Lighter Cyan
-        self.connection_frame.pack(fill=tk.X, padx=25, pady=(15,5)) # padxを25に増やしました
+        self.connection_frame = ctk.CTkFrame(master, fg_color="transparent")
+        self.connection_frame.pack(fill="x", padx=25, pady=(15,5))
 
-        self.host_label = tk.Label(self.connection_frame, text="サーバーIP:", bg='#B2EBF2', font=("Arial", 10))
-        self.host_label.pack(side=tk.LEFT, padx=(10,0))
-        self.host_entry = tk.Entry(self.connection_frame, width=15, font=("Arial", 10), relief=tk.SOLID, borderwidth=1)
+        self.host_label = ctk.CTkLabel(self.connection_frame, text="サーバーIP:")
+        self.host_label.pack(side="left", padx=(5,0))
+        self.host_entry = ctk.CTkEntry(self.connection_frame, width=110)
         self.host_entry.insert(0, "localhost")
-        self.host_entry.pack(side=tk.LEFT, padx=5)
+        self.host_entry.pack(side="left", padx=5)
 
-        self.port_label = tk.Label(self.connection_frame, text="ポート:", bg='#B2EBF2', font=("Arial", 10))
-        self.port_label.pack(side=tk.LEFT)
-        self.port_entry = tk.Entry(self.connection_frame, width=7, font=("Arial", 10), relief=tk.SOLID, borderwidth=1)
+        self.port_label = ctk.CTkLabel(self.connection_frame, text="ポート:")
+        self.port_label.pack(side="left")
+        self.port_entry = ctk.CTkEntry(self.connection_frame, width=50)
         self.port_entry.insert(0, "50000")
-        self.port_entry.pack(side=tk.LEFT, padx=5)
+        self.port_entry.pack(side="left", padx=5)
         
-        self.username_label = tk.Label(self.connection_frame, text="名前:", bg='#B2EBF2', font=("Arial", 10))
-        self.username_label.pack(side=tk.LEFT)
-        self.username_entry = tk.Entry(self.connection_frame, width=12, font=("Arial", 10), relief=tk.SOLID, borderwidth=1)
+        self.username_label = ctk.CTkLabel(self.connection_frame, text="名前:")
+        self.username_label.pack(side="left")
+        self.username_entry = ctk.CTkEntry(self.connection_frame, width=70)
         self.username_entry.insert(0, f"User{datetime.datetime.now().second}")
-        self.username_entry.pack(side=tk.LEFT, padx=5)
+        self.username_entry.pack(side="left", padx=5)
 
-        self.connect_button = tk.Button(self.connection_frame, text="接続", command=self.connect_to_server,
-                        bg='#4CAF50', fg='white', font=("Arial", 10, "bold"), relief=tk.RAISED, borderwidth=2, activebackground='#45a049',
-                        width=8) # ボタンの幅を調整 (文字単位)
-        self.connect_button.pack(side=tk.LEFT, padx=(20,20))
+        self.connect_button = ctk.CTkButton(self.connection_frame, text="接続", command=self.connect_to_server, width=70)
+        self.connect_button.pack(side="left", padx=(0,5))
         
-        self.disconnect_button = tk.Button(self.connection_frame, text="切断", command=self.disconnect_from_server, state='disabled',
-                                           bg='#F44336', fg='white', font=("Arial", 10, "bold"), relief=tk.RAISED, borderwidth=2, activebackground='#e53935',width=8)
-        self.disconnect_button.pack(side=tk.LEFT, padx=(0,20))
+        self.disconnect_button = ctk.CTkButton(self.connection_frame, text="切断", command=self.disconnect_from_server, state='disabled', width=70)
+        self.disconnect_button.pack(side="left", padx=(0,10))
 
-        # チャット表示エリア
-        self.chat_display = scrolledtext.ScrolledText(master, state='disabled', wrap=tk.WORD, height=18, width=65,
-                                                      bg='#FFFFFF', fg='#333333', font=("Arial", 10), relief=tk.SOLID, borderwidth=1)
-        self.chat_display.pack(pady=5, padx=25, fill=tk.BOTH, expand=True) # padxを25に増やしました
+        self.help_button = ctk.CTkButton(self.connection_frame, text="ヘルプ", command=self.show_help, width=70, fg_color=("#4CAF50", "#45a049"))
+        self.help_button.pack(side="left", padx=(0,5))
+
+        # チャット表示エリア（LINEライクなレイアウト）
+        self.chat_display = ctk.CTkScrollableFrame(master, fg_color="#f0f0f0")
+        self.chat_display.pack(pady=5, padx=25, fill="both", expand=True)
 
         # メッセージ入力フレーム
-        self.message_frame = tk.Frame(master, bg='#E0F7FA', pady=5)
-        self.message_frame.pack(fill=tk.X, padx=25, pady=(5,15)) # padxを25に増やしました
+        self.message_frame = ctk.CTkFrame(master, fg_color="transparent")
+        self.message_frame.pack(fill="x", padx=80, pady=(5,15))
 
-        self.message_input = tk.Entry(self.message_frame, width=30, state='disabled', font=("Arial", 10), relief=tk.SOLID, borderwidth=1) # 55 * 0.7 = 38.5 -> 38 or 39
-        self.message_input.pack(side=tk.LEFT, padx=(0,5), fill=tk.X, expand=True)
+        self.message_input = ctk.CTkEntry(self.message_frame, state='disabled', placeholder_text="メッセージを入力...")
+        self.message_input.pack(side="left", padx=(0,5), fill="x", expand=True)
         self.message_input.bind("<Return>", self.send_message_event)
 
-        self.send_button = tk.Button(self.message_frame, text="送信", command=self.send_message, state='disabled',
-                                     bg='#2196F3', fg='white', font=("Arial", 10, "bold"), relief=tk.RAISED, borderwidth=2, activebackground='#1e88e5') # Blue
-        self.send_button.pack(side=tk.LEFT, padx=(0,5))
+        self.send_button = ctk.CTkButton(self.message_frame, text="送信", command=self.send_message, state='disabled', width=60)
+        self.send_button.pack(side="left", padx=(0,5))
 
-        self.gemini_summarize_button = tk.Button(self.message_frame, text="Gemini要約", command=self.request_gemini_summary, state='disabled',
-                                                 bg='#FFC107', fg='black', font=("Arial", 10, "bold"), relief=tk.RAISED, borderwidth=2, activebackground='#ffb300') # Amber
-        self.gemini_summarize_button.pack(side=tk.LEFT)
-
-
+        self.ai_positive_active = False # AIポジティブモードの状態フラグ
+        self.ai_positive_button = ctk.CTkButton(
+            self.message_frame, 
+            text="ポジティブ", 
+            state='disabled', 
+            width=120, 
+            command=self.handle_ai_positive_click
+        )
+        self.ai_positive_button.pack(side="left", padx=(5,0))
+        
         self.client_socket = None
         self.is_connected = False
         self.receive_thread = None
         self.username = "" # 接続時に設定される実際のユーザー名
         self.initial_username = "" # ユーザーが最初に入力したユーザー名
 
-        # メッセージスタイル用タグ設定
-        self.chat_display.tag_config('system', foreground='#00695C', font=("Arial", 10, 'italic')) # Teal
-        self.chat_display.tag_config('system_error', foreground='#D32F2F', font=("Arial", 10, 'italic bold')) # Red
-        self.chat_display.tag_config('system_warn', foreground='#FFA000', font=("Arial", 10, 'italic')) # Amber
-        self.chat_display.tag_config('info', foreground='#0277BD', font=("Arial", 10, 'italic')) # Light Blue
-        self.chat_display.tag_config('own_message', foreground='#0D47A1', font=("Arial", 10, 'bold')) # Dark Blue
-        self.chat_display.tag_config('other_message', foreground='#333333') # Default Black/Grey
-        self.chat_display.tag_config('pm_sent', foreground='#6A1B9A', font=("Arial", 10, 'italic')) # Purple (to X)
-        self.chat_display.tag_config('pm_received', foreground='#AD1457', font=("Arial", 10, 'bold')) # Pink (from X)
-        # self.chat_display.tag_config('summary', foreground='#4A148C', font=("Arial", 10, 'italic'), background='#E1BEE7') # 通常の要約用 (もしあれば)
-        self.chat_display.tag_config('gemini_summary', foreground='#BF360C', font=("Arial", 10, 'italic'), background='#FFCCBC') # Deep Orange BG for Gemini summary
-
-
         master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-    def display_message(self, message, tag=None):
-        self.chat_display.config(state='normal')
-        if tag:
-            self.chat_display.insert(tk.END, message + "\n", tag)
+    def create_message_bubble(self, username, message_text, is_own=False, message_type="normal"):
+        """LINEライクなメッセージバブルを作成"""
+        # メッセージコンテナフレーム
+        container = ctk.CTkFrame(self.chat_display, fg_color="transparent")
+        container.pack(fill="x", padx=10, pady=2)
+        
+        if message_type == "system":
+            # システムメッセージは中央配置
+            system_frame = ctk.CTkFrame(container, fg_color="#ffebee", corner_radius=15)
+            system_frame.pack(pady=5)
+            system_label = ctk.CTkLabel(
+                system_frame, 
+                text=message_text, 
+                text_color="#d32f2f",
+                font=("Arial", 15, "bold"),  # 太字を追加
+                wraplength=400
+            )
+            system_label.pack(padx=10, pady=5)
         else:
-            self.chat_display.insert(tk.END, message + "\n")
-        self.chat_display.see(tk.END)
-        self.chat_display.config(state='disabled')
+            if is_own:
+                # 自分のメッセージ（右側）
+                message_frame = ctk.CTkFrame(container, fg_color="transparent")
+                message_frame.pack(side="right", anchor="e")
+                
+                bubble = ctk.CTkFrame(message_frame, fg_color="#e3f2fd", corner_radius=15)
+                bubble.pack(side="right", padx=(50, 0))
+                
+                # メッセージテキスト
+                message_label = ctk.CTkLabel(
+                    bubble, 
+                    text=message_text, 
+                    text_color="#000000",
+                    font=("Arial", 16, "bold"),  # 太字を追加
+                    wraplength=300,
+                    justify="left"
+                )
+                message_label.pack(anchor="e", padx=10, pady=(5, 5))
+            else:
+                # 相手のメッセージ（左側）
+                message_frame = ctk.CTkFrame(container, fg_color="transparent")
+                message_frame.pack(side="left", anchor="w")
+                
+                # ユーザー名表示（バブルの外側上部）
+                if username and ":" in f"{username}:":
+                    display_name = username.split(":")[0] if ":" in username else username
+                    name_label = ctk.CTkLabel(
+                        message_frame, 
+                        text=display_name, 
+                        font=("Arial", 13, "bold"),  # 太字を追加
+                        text_color="#666"
+                    )
+                    name_label.pack(anchor="w", padx=10, pady=(0, 2))
+                
+                bubble = ctk.CTkFrame(message_frame, fg_color="#ffffff", corner_radius=15)
+                bubble.pack(side="left", padx=(0, 50))
+                
+                # メッセージテキスト
+                clean_message = message_text
+                if ":" in message_text and username:
+                    parts = message_text.split(":", 1)
+                    if len(parts) > 1:
+                        clean_message = parts[1].strip()
+                
+                message_label = ctk.CTkLabel(
+                    bubble, 
+                    text=clean_message, 
+                    text_color="#000000",
+                    font=("Arial", 16, "bold"),  # 太字を追加
+                    wraplength=300,
+                    justify="left"
+                )
+                message_label.pack(anchor="w", padx=10, pady=5)
+        
+        # スクロールを最下部に移動
+        self.chat_display._parent_canvas.after(100, self._scroll_to_bottom)
+
+    def _scroll_to_bottom(self):
+        """チャット表示を最下部にスクロール"""
+        self.chat_display._parent_canvas.yview_moveto(1.0)
+
+    def display_message(self, message, tag=None):
+        """メッセージを表示（新しいバブル形式）"""
+        # メッセージの種類を判定
+        if tag in ['system', 'system_error', 'system_warn', 'info']:
+            self.create_message_bubble("", message, False, "system")
+        elif tag == 'own_message':
+            # 自分のメッセージ
+            self.create_message_bubble(self.username, message, True)
+        elif tag in ['pm_sent', 'pm_received']:
+            # 個人メッセージ
+            self.create_message_bubble("", message, tag == 'pm_sent', "system")
+        else:
+            # 他のユーザーのメッセージ
+            username = ""
+            clean_message = message
+            if ":" in message and not message.startswith("SYSTEM:"):
+                parts = message.split(":", 1)
+                if len(parts) > 1:
+                    username = parts[0].strip()
+                    clean_message = parts[1].strip()
+            
+            is_own = (username == self.username)
+            self.create_message_bubble(username, clean_message, is_own)
 
     def connect_to_server(self):
         if self.is_connected:
@@ -109,14 +239,13 @@ class ChatClientGUI:
 
         host = self.host_entry.get().strip()
         port_str = self.port_entry.get().strip()
-        self.initial_username = self.username_entry.get().strip() # ユーザーが入力した名前を保持
-        self.username = self.initial_username # 初期値として設定
+        self.initial_username = self.username_entry.get().strip()
+        self.username = self.initial_username
 
         if not host or not port_str or not self.username:
             messagebox.showerror("入力エラー", "サーバーIP、ポート、およびユーザー名を入力してください。", parent=self.master)
             return
         
-        # クライアント側での予約語チェックはサーバーに任せても良いが、基本的なものは残す
         if self.username.upper() == "SERVER" or self.username.upper() == "SYSTEM":
             messagebox.showerror("入力エラー", "そのユーザー名は使用できません。", parent=self.master)
             return
@@ -126,22 +255,25 @@ class ChatClientGUI:
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.client_socket.connect((host, port))
             
-            self.client_socket.sendall(self.username.encode('utf-8')) # 最初にユーザー名を送信
+            self.client_socket.sendall(self.username.encode('utf-8'))
 
             self.is_connected = True
             self.display_message(f"システム: {host}:{port} に接続試行中 (ユーザー名: {self.username})...", tag='info')
             self.master.title(f"チャットクライアント - {self.username}")
 
-            self.connect_button.config(state='disabled')
-            self.disconnect_button.config(state='normal')
-            self.host_entry.config(state='disabled')
-            self.port_entry.config(state='disabled')
-            self.username_entry.config(state='disabled')
-            self.message_input.config(state='normal')
-            self.send_button.config(state='normal')
-            # self.summarize_button.config(state='normal') # 通常の要約ボタン (もしあれば)
-            self.gemini_summarize_button.config(state='normal') # Gemini要約ボタンを有効化
-            self.message_input.focus_set()
+            self.connect_button.configure(state='disabled')
+            self.disconnect_button.configure(state='normal')
+            self.host_entry.configure(state='disabled')
+            self.port_entry.configure(state='disabled')
+            self.username_entry.configure(state='disabled')
+            self.message_input.configure(state='normal')
+            self.send_button.configure(state='normal')
+            # self.ask_gemini_button.configure(state='normal') # 変更
+            # self.ask_gemini_button.configure(text="Gemini応答OFF", fg_color=("#FF9800", "#E67E00")) # 変更
+            # self.gemini_mode_enabled = False # 変更
+            self.ai_positive_button.configure(state='normal', text="ポジティブ") # 状態更新
+            self.ai_positive_active = False # 状態更新
+            self.message_input.focus()
 
             self.receive_thread = threading.Thread(target=self.receive_messages, daemon=True)
             self.receive_thread.start()
@@ -163,7 +295,7 @@ class ChatClientGUI:
             
     def disconnect_from_server(self, show_info=True, reason=None):
         if not self.is_connected and not self.client_socket:
-             if show_info and self.connect_button['state'] == 'normal':
+             if show_info and self.connect_button.cget('state') == 'normal':
                   pass
              elif show_info:
                   messagebox.showinfo("切断", "既にサーバーから切断されています。", parent=self.master)
@@ -174,33 +306,31 @@ class ChatClientGUI:
             try:
                 self.client_socket.shutdown(socket.SHUT_RDWR)
                 self.client_socket.close()
-            except OSError: pass # ソケットが既に閉じている場合など
+            except OSError: pass
             except Exception as e:
                 print(f"ソケットクローズエラー: {e}")
             finally:
                 self.client_socket = None
 
-        # receive_thread の終了を待つ (is_connectedがFalseになればループは抜けるはず)
-        # if self.receive_thread and self.receive_thread.is_alive():
-        #    self.receive_thread.join(timeout=0.1) # 短いタイムアウト
-
         if show_info:
             msg = reason if reason else "サーバーから切断しました。"
             self.display_message(f"システム: {msg}", tag='info')
-            messagebox.showinfo("切断完了", msg, parent=self.master)
+
         
         self.master.title("チャットクライアント")
-        self.connect_button.config(state='normal')
-        self.disconnect_button.config(state='disabled')
-        self.host_entry.config(state='normal')
-        self.port_entry.config(state='normal')
-        self.username_entry.config(state='normal')
-        self.message_input.config(state='disabled')
-        self.send_button.config(state='disabled')
-        # self.summarize_button.config(state='disabled') # 通常の要約ボタン (もしあれば)
-        self.gemini_summarize_button.config(state='disabled') # Gemini要約ボタンを無効化
-        self.message_input.delete(0, tk.END)
-
+        self.connect_button.configure(state='normal')
+        self.disconnect_button.configure(state='disabled')
+        self.host_entry.configure(state='normal')
+        self.port_entry.configure(state='normal')
+        self.username_entry.configure(state='normal')
+        self.message_input.configure(state='disabled')
+        self.send_button.configure(state='disabled')
+        # self.ask_gemini_button.configure(state='disabled') # 変更
+        # self.ask_gemini_button.configure(text="Gemini応答OFF", fg_color=("#FF9800", "#E67E00")) # 変更
+        # self.gemini_mode_enabled = False # 変更
+        self.ai_positive_button.configure(state='disabled', text="ポジティブ", fg_color=("#808080", "#606060")) # 状態更新
+        self.ai_positive_active = False # 状態更新
+        self.message_input.delete(0, "end")
 
     def send_message_event(self, event=None):
         self.send_message()
@@ -213,12 +343,21 @@ class ChatClientGUI:
         message = self.message_input.get().strip()
         if message:
             try:
-                self.client_socket.sendall(message.encode('utf-8'))
-                # コマンドでない通常のチャットメッセージの場合、ローカルエコーする
-                # サーバーは送信者本人にはブロードキャストしないため
-                if not message.startswith("/"):
-                    self.display_message(f"{self.username}: {message}", tag='own_message')
-                self.message_input.delete(0, tk.END)
+                if self.ai_positive_active: # AIポジティブモードが有効な場合
+                    self.client_socket.sendall(f"/positive_transform {message}".encode('utf-8'))
+                elif message.startswith("/"):
+                    self.client_socket.sendall(message.encode('utf-8'))
+                    if message.lower().startswith("/w ") or message.lower().startswith("/msg "):
+                        pass
+                    elif message.lower() == "/users":
+                        pass
+                    else:
+                        self.display_message(f"コマンド送信: {message}", tag='info')
+                else:
+                    self.client_socket.sendall(message.encode('utf-8'))
+                    self.display_message(message, tag='own_message')  # ユーザー名を除去してメッセージのみ表示
+                
+                self.message_input.delete(0, "end")
             except BrokenPipeError:
                  self.handle_disconnection("送信エラー: サーバーとの接続が切れました。(BrokenPipe)")
             except ConnectionResetError:
@@ -226,34 +365,18 @@ class ChatClientGUI:
             except Exception as e:
                 self.handle_disconnection(f"送信エラー: {e}")
 
-    # def request_summary(self): # 通常の要約リクエスト (もしあれば)
-    #     if not self.is_connected or not self.client_socket:
-    #         messagebox.showerror("要約エラー", "サーバーに接続されていません。", parent=self.master)
-    #         return
-    #     try:
-    #         self.client_socket.sendall("/summarize".encode('utf-8'))
-    #         self.display_message("システム: チャットの要約をリクエストしました...", tag='info')
-    #     except BrokenPipeError:
-    #         self.handle_disconnection("要約リクエストエラー: サーバーとの接続が切れました。(BrokenPipe)")
-    #     except ConnectionResetError:
-    #         self.handle_disconnection("要約リクエストエラー: サーバーとの接続がリセットされました。(ConnectionReset)")
-    #     except Exception as e:
-    #         self.handle_disconnection(f"要約リクエストエラー: {e}")
-
-    def request_gemini_summary(self):
-        if not self.is_connected or not self.client_socket:
-            messagebox.showerror("Gemini要約エラー", "サーバーに接続されていません。", parent=self.master)
+    def handle_ai_positive_click(self):
+        """AIポジティブボタンのクリック処理（トグル方式に変更）"""
+        if self.ai_positive_button.cget('state') == 'disabled' or not self.is_connected:
             return
-        try:
-            self.client_socket.sendall("/summarize_gemini".encode('utf-8'))
-            self.display_message("システム: Gemini要約をリクエストしました...", tag='info')
-        except BrokenPipeError:
-            self.handle_disconnection("Gemini要約リクエストエラー: サーバーとの接続が切れました。(BrokenPipe)")
-        except ConnectionResetError:
-            self.handle_disconnection("Gemini要約リクエストエラー: サーバーとの接続がリセットされました。(ConnectionReset)")
-        except Exception as e:
-            self.handle_disconnection(f"Gemini要約リクエストエラー: {e}")
-
+        
+        # トグル動作
+        if not self.ai_positive_active:
+            self.ai_positive_active = True
+            self.ai_positive_button.configure(text="ポジティブ", fg_color=("#4CAF50", "#388E3C"))
+        else:
+            self.ai_positive_active = False
+            self.ai_positive_button.configure(text="ポジティブ", fg_color=("#808080", "#606060"))
 
     def receive_messages(self):
         while self.is_connected and self.client_socket:
@@ -293,26 +416,21 @@ class ChatClientGUI:
                 elif message == "SERVER_SHUTDOWN":
                     self.handle_disconnection("サーバーがシャットダウンしました。")
                     break
-                elif message.startswith("SYSTEM_INFO:"): # サーバーからのお知らせ (例: 要約生成中)
-                    self.display_message(message, tag='info')
                 elif message.startswith("SYSTEM:"):
                     self.display_message(message, tag='system')
                 elif message.startswith("(個人 from"): # (個人 from Sender): Message
                     self.display_message(message, tag='pm_received')
                 elif message.startswith("(個人 to"):   # (個人 to Recipient): Message
                     self.display_message(message, tag='pm_sent')
-                # elif message.startswith("SYSTEM_SUMMARY:"): # 通常の要約メッセージ (もしあれば)
-                #     self.display_message(message, tag='summary')
-                elif message.startswith("SYSTEM_GEMINI_SUMMARY:"): # Gemini要約メッセージ
-                    # ライブラリ未インストールエラーの特別処理
-                    if "ライブラリがインストールされていない" in message:
-                        self.display_message("システム: Google Generative AIライブラリがサーバーにインストールされていません。", tag='system_error')
-                        self.display_message("システム: 管理者にライブラリのインストールを依頼してください。", tag='system_error')
-                        self.display_message("システム: インストールコマンド: pip install google-generativeai", tag='info')
-                    elif "APIが利用できない" in message:
-                        self.display_message("システム: Gemini APIが設定されていないか、初期化に失敗しました。", tag='system_error')
-                    else:
-                        self.display_message(message, tag='gemini_summary')
+                # elif message.startswith("GEMINI_RESPONSE:"): # Geminiからの応答 # 変更
+                #     # プレフィックス "GEMINI_RESPONSE:" を除去して表示
+                #     # サーバー側で "Gemini: " が付与されていることを想定
+                #     actual_message = message.split(":", 1)[1].strip() if ":" in message else message.strip() 
+                #     self.display_message(actual_message, tag='gemini_response_tag')
+                elif message.startswith("AI_POSITIVE_RESPONSE:"): # AIポジティブ変換応答の処理
+                    # 例: AI_POSITIVE_RESPONSE:OriginalUser (ポジティブ): Transformed Message
+                    actual_message = message.split(":", 1)[1].strip() if ":" in message else message.strip()
+                    self.display_message(actual_message, tag='ai_positive_response_tag')
                 else:
                     self.display_message(message, tag='other_message')
 
@@ -337,22 +455,43 @@ class ChatClientGUI:
     
     def handle_disconnection(self, reason_message):
         if self.is_connected :
-            self.is_connected = False # これで receive_messages ループも止まる
-            # GUI操作はメインスレッドで行う
+            self.is_connected = False
             self.master.after(0, lambda: self.disconnect_from_server(show_info=True, reason=reason_message))
 
     def on_closing(self):
         if self.is_connected:
-            # 確認ダイアログを出すか、即座に切断するかは設計による
-            # if messagebox.askyesno("終了確認", "サーバーに接続中です。切断して終了しますか？", parent=self.master):
-            #    self.disconnect_from_server(show_info=False)
-            #    self.master.destroy()
-            # else:
-            #    return # 終了をキャンセル
-            self.disconnect_from_server(show_info=False) # ここでは確認なしで即時切断
+            self.disconnect_from_server(show_info=False)
         self.master.destroy()
 
+    def show_help(self):
+        """ヘルプメッセージを表示"""
+        help_message = """🎉 チャット機能ガイド 🎉
+
+📱 基本的なチャット機能:
+• 普通にメッセージを入力すると、全員に送信されます
+• Enterキーでも送信できます
+
+🚀 特別なコマンド機能:
+• /users - 現在接続中のユーザー一覧を表示
+• /w ユーザー名 メッセージ - 特定のユーザーに個人メッセージを送信
+• /msg ユーザー名 メッセージ - 個人メッセージの別コマンド
+
+✨ 魔法のポジティブ機能 ✨
+「ポジティブ」ボタンを押すと、あなたのメッセージが
+AIによって自動的にポジティブで明るい表現に変換されます！
+
+例:
+「疲れた...」→「今日もお疲れ様でした！明日はきっと素晴らしい日になりますね🌟」
+「難しい」→「挑戦しがいがありますね！一歩ずつ進んでいきましょう💪」
+
+ポジティブモードを有効にすると、ボタンが緑色に光ります！
+もう一度押すと通常モードに戻ります。
+
+🎊 みんなで楽しくチャットしましょう！ 🎊"""
+        
+        messagebox.showinfo("チャット機能ヘルプ", help_message, parent=self.master)
+
 if __name__ == '__main__':
-    root = tk.Tk()
+    root = ctk.CTk()
     app = ChatClientGUI(root)
     root.mainloop()
