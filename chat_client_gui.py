@@ -4,6 +4,16 @@ import socket
 import threading
 import datetime
 import re # 正規表現モジュールをインポート
+import os
+import sys
+
+# リソースパスを取得する関数
+def get_resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 class ChatClientGUI:
     def __init__(self, master):
@@ -14,16 +24,15 @@ class ChatClientGUI:
         ctk.set_appearance_mode("Light")  # Modes: "System" (default), "Dark", "Light"
         ctk.set_default_color_theme("blue")  # Themes: "blue" (default), "green", "dark-blue"
 
-        # アイコン設定 (オプション)
+        # アイコン設定 (ICO優先, PNGフォールバック)
         try:
-            # ICOファイルを優先的に使用（Windowsでより確実）
+            icon_path = get_resource_path('positto.ico')
+            master.wm_iconbitmap(icon_path)
+        except Exception as e:
+            print(f"ICOアイコン設定中にエラーが発生: {e}")
             try:
-                # .icoファイルがある場合はwm_iconbitmapを使用
-                master.wm_iconbitmap('client_icon.ico')
-                print("アイコンを正常に設定しました: client_icon.ico")
-            except:
-                # PNGファイルからアイコン画像を読み込み
-                icon = PhotoImage(file='client_icon.png')
+                icon_img_path = get_resource_path('client_icon.png')
+                icon = PhotoImage(file=icon_img_path)
                 
                 # アイコンのサイズを調整（32x32または16x16が推奨）
                 # subsampleで縮小する場合
@@ -37,28 +46,24 @@ class ChatClientGUI:
                 
                 print("アイコンを正常に設定しました: client_icon.png")
                 
+            except Exception as e2:
+                print(f"PNGアイコン設定中にエラーが発生: {e2}\nサポートされる形式: ICO (推奨), PNG, GIF")
+                # photo(default, *photoimages)の説明:
+                # - default=True: このアイコンをアプリケーションのデフォルトアイコンとして設定
+                #   True: 全ての新しいトップレベルウィンドウに適用
+                #   False: このウィンドウのみに適用
+                # - icon: PhotoImageオブジェクト（PNG、GIF形式をサポート）
+                # 
+                # 効果:
+                # 1. ウィンドウのタイトルバー左端にアイコンが表示される
+                # 2. タスクバーにアイコンが表示される
+                # 3. Alt+Tabでのウィンドウ切り替え時にアイコンが表示される
+                # 4. システムの通知エリアでアイコンが使用される
+                master.iconphoto(True, icon)
+                
+                print("アイコンを正常に設定しました: client_icon.png")
         except FileNotFoundError:
             print("アイコンファイルが見つかりません: client_icon.png または client_icon.ico")
-            print("デフォルトのTkinterアイコンを使用します")
-        except Exception as e:
-            print(f"アイコン設定中にエラーが発生: {e}")
-            print("サポートされる形式: ICO (推奨), PNG, GIF")
-            # photo(default, *photoimages)の説明:
-            # - default=True: このアイコンをアプリケーションのデフォルトアイコンとして設定
-            #   True: 全ての新しいトップレベルウィンドウに適用
-            #   False: このウィンドウのみに適用
-            # - icon: PhotoImageオブジェクト（PNG、GIF形式をサポート）
-            # 
-            # 効果:
-            # 1. ウィンドウのタイトルバー左端にアイコンが表示される
-            # 2. タスクバーにアイコンが表示される
-            # 3. Alt+Tabでのウィンドウ切り替え時にアイコンが表示される
-            # 4. システムの通知エリアでアイコンが使用される
-            master.iconphoto(True, icon)
-            
-            print("アイコンを正常に設定しました: client_icon.png")
-        except FileNotFoundError:
-            print("アイコンファイルが見つかりません: client_icon.png")
             print("デフォルトのTkinterアイコンを使用します")
         except Exception as e:
             print(f"アイコン設定中にエラーが発生: {e}")
