@@ -5,7 +5,19 @@ import socket
 import threading
 import datetime
 import os
+import sys # sysをインポート
 import google.generativeai as genai
+
+# リソースパスを取得する関数
+def get_resource_path(relative_path):
+    """ PyInstallerで作成された実行ファイル内のリソースへのパスを取得します。 """
+    try:
+        # PyInstallerが作成する一時フォルダ
+        base_path = sys._MEIPASS
+    except Exception:
+        # 通常のPython環境
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 class ChatServerGUI:
     def __init__(self, master):
@@ -16,12 +28,50 @@ class ChatServerGUI:
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
 
-        # アイコン設定 (オプション: .pngファイルを同じディレクトリに配置)
+        # アイコン設定 (ICO優先, PNGフォールバック)
         try:
-            icon = PhotoImage(file='server_icon.png')
-            master.iconphoto(True, icon)
-        except Exception:
-            print("サーバーアイコンが見つかりません。スキップします。")
+            icon_path = get_resource_path('positto.ico')
+            master.wm_iconbitmap(icon_path)
+        except Exception as e:
+            print(f"ICOアイコン設定中にエラーが発生: {e}")
+            try:
+                icon_img_path = get_resource_path('client_icon.png')
+                icon = PhotoImage(file=icon_img_path)
+                
+                # アイコンのサイズを調整（32x32または16x16が推奨）
+                # subsampleで縮小する場合
+                # icon = icon.subsample(2, 2)  # 半分のサイズに縮小
+                
+                # ウィンドウのアイコンを設定
+                master.iconphoto(True, icon)
+                
+                # 追加の設定（Windows用）
+                master.wm_iconphoto(True, icon)
+                
+                print("アイコンを正常に設定しました: client_icon.png")
+                
+            except Exception as e2:
+                print(f"PNGアイコン設定中にエラーが発生: {e2}\nサポートされる形式: ICO (推奨), PNG, GIF")
+                # photo(default, *photoimages)の説明:
+                # - default=True: このアイコンをアプリケーションのデフォルトアイコンとして設定
+                #   True: 全ての新しいトップレベルウィンドウに適用
+                #   False: このウィンドウのみに適用
+                # - icon: PhotoImageオブジェクト（PNG、GIF形式をサポート）
+                # 
+                # 効果:
+                # 1. ウィンドウのタイトルバー左端にアイコンが表示される
+                # 2. タスクバーにアイコンが表示される
+                # 3. Alt+Tabでのウィンドウ切り替え時にアイコンが表示される
+                # 4. システムの通知エリアでアイコンが使用される
+                master.iconphoto(True, icon)
+                
+                print("アイコンを正常に設定しました: client_icon.png")
+        except FileNotFoundError:
+            print("アイコンファイルが見つかりません: client_icon.png または client_icon.ico")
+            print("デフォルトのTkinterアイコンを使用します")
+        except Exception as e:
+            print(f"アイコン設定中にエラーが発生: {e}")
+            print("サポートされる形式: PNG, GIF")
 
         self.log_label = ctk.CTkLabel(master, text="サーバーログ:")
         self.log_label.pack(pady=(10,0))
